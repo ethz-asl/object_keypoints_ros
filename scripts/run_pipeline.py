@@ -240,10 +240,10 @@ class ObjectKeypointPipeline:
             msg.size.z = self.bbox_size[2]
             self.bbox_pub.publish(msg)
 
-    def _publish_result(self,image):
-        #print("result: ", image.shape)
-        image_msg = self.bridge.cv2_to_imgmsg(image[:, :, :3], encoding='passthrough')
-        self.result_img_pub.publish(image_msg)
+    def _publish_result(self,left_image, left_heatmap):
+        result_img = self._compute_result_image(left_image, left_heatmap)  
+        result_msg = self.bridge.cv2_to_imgmsg(result_img[:, :, :3], encoding='passthrough')
+        self.result_img_pub.publish(result_msg)
 
     def _to_heatmap(self, target):
         target = np.clip(target, 0.0, 1.0)
@@ -266,16 +266,11 @@ class ObjectKeypointPipeline:
         if self.left_image is not None:
             left_image = self._preprocess_image(self.left_image)
             objects, heatmap = self.pipeline(left_image)
-            # self.left_image = None
- 
-            print("Objects are:")
-            print(objects)
             
             left_heatmap = self._to_heatmap(heatmap[0].numpy())
             left_image = left_image.cpu().numpy()[0]
-
-            result_img = self._compute_result_image(left_image, left_heatmap)
             
+            # TODO(giuseppe) new function to contain this logic
             points_left = []
             for obj in objects:
                 p_left = np.concatenate([p + 1.0 for p in obj['keypoints'] if p.size != 0], axis=0)
@@ -289,8 +284,8 @@ class ObjectKeypointPipeline:
                                             point[1] * self.in_out_scale[1] * self.scale[1]], dtype=int)
                     self.left_image = cv2.drawMarker(self.left_image, point_int, (0,255,0), markerType=cv2.MARKER_CROSS, markerSize=30, thickness=3)
 
-            self._publish_heatmaps(left=heatmap_left, left_keypoints=objects[0]['keypoints'])
-            self._publish_result(image_left)
+            self._publish_heatmaps(left=left_heatmap, left_keypoints=objects[0]['keypoints'])
+            self._publish_result(left_image, left_heatmap)
 
 
 if __name__ == "__main__":
