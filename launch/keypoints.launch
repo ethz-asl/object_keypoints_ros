@@ -9,7 +9,7 @@
   <arg name="model_name"        default="valve_depth"/>
   <arg name="model"             default="$(find object_keypoints_ros)/models/$(arg model_name).pt"/>
   <arg name="keypoints_file"    default="$(find object_keypoints_ros)/config/valve.json"/>
-  <arg name="image_file"        default="$(find object_keypoints_ros)/resources/valve3.png"/>
+  <arg name="image_file"        default="$(find object_keypoints_ros)/resources/valve3_gt.png"/>
   
   <node name="object_keypoints_ros" pkg="object_keypoints_ros" type="run_pipeline.py" output="screen">
     <param name="left_image_topic"    value="$(arg image_topic)" />
