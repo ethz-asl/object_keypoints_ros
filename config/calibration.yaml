@@ -7,7 +7,7 @@ cam0:
   - 0
   - 0
   - 0
-  distortion_model: plumb_bob
+  distortion_model: radtan
   intrinsics:
   - 613.7755737304688
   - 613.7672119140625
@@ -45,7 +45,7 @@ cam1:
   - 0
   - 0
   - 0
-  distortion_model: plumb_bob
+  distortion_model: radtan
   intrinsics:
   - 613.7755737304688
   - 613.7672119140625
