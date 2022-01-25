@@ -1,0 +1,3 @@
+sensor_msgs/Image rgb
+--- 
+object_keypoints_ros/Keypoints detection

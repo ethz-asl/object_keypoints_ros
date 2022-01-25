@@ -5,10 +5,11 @@ find_package(catkin REQUIRED COMPONENTS message_generation geometry_msgs std_msg
 catkin_python_setup()
 
 add_message_files(DIRECTORY msg FILES Keypoint.msg Keypoints.msg)
+add_service_files(DIRECTORY srv FILES KeypointDetection.srv)
 
-generate_messages(DEPENDENCIES std_msgs geometry_msgs)
+generate_messages(DEPENDENCIES std_msgs geometry_msgs sensor_msgs)
 
-catkin_package(CATKIN_DEPENDS message_runtime std_msgs geometry_msgs)
+catkin_package(CATKIN_DEPENDS message_runtime std_msgs geometry_msgs sensor_msgs)
 
 
 

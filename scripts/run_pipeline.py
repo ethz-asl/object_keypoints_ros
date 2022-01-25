@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import json
 import copy
 import cv2
@@ -55,7 +56,6 @@ class ObjectKeypointPipeline:
         self.use_gpu = rospy.get_param("~gpu", True)
         self.model = rospy.get_param('~load_model', "/home/ken/Hack/catkin_ws/src/object_keypoints/model/modelv2.pt")
         self.keypoint_config_path = rospy.get_param('~keypoints', "")
-        self.image_file = rospy.get_param("~image_file", "")
         self.calibration_file = rospy.get_param('~calibration')
         self.verbose = rospy.get_param('~verbose', False)
     
@@ -72,16 +72,10 @@ class ObjectKeypointPipeline:
         self.input_size = (511, 511)
         self.IMAGE_SIZE = (511, 511)
         self.prediction_size = SceneDataset.prediction_size
-        self.predict_on_static_image = False
-        self.static_image_ros = None
         self.info = Info()
 
         with open(self.keypoint_config_path, 'rt') as f:
             self.keypoint_config = json.load(f)
-
-        if self.image_file != "":
-            self.predict_on_static_image = True
-            self._process_static_image()
         
         self.info.append("Initializing keypoint inference pipeline.")
         self.info.append("Loading model from: {}".format(self.model))
@@ -89,10 +83,7 @@ class ObjectKeypointPipeline:
         self.info.append("Calibration file: {}".format(self.calibration_file))
         self.info.append("Use gpu: {}".format(self.use_gpu))
         self.info.append("Prediction size {}".format(self.prediction_size))
-        self.info.append("Static image file: {}".format(self.image_file))
         self.info.append("Verbose: {}".format(self.verbose))
-        if not self.predict_on_static_image:
-            self.info.append("Static image file is empty... subscribing to ROS topic instead.") 
         self.info.print()
         
         self.pipeline = pipeline.LearnedKeypointTrackingPipeline(self.model, self.use_gpu, self.prediction_size, 
@@ -128,23 +119,6 @@ class ObjectKeypointPipeline:
         self.annotation_img_pub = rospy.Publisher("object_keypoints_ros/annotation", Image, queue_size=1)
         self.keypoints_pub =  rospy.Publisher("object_keypoints_ros/keypoints", Keypoints, queue_size=1)
         
-        # Subscribers
-        if self.predict_on_static_image:
-            self.left_sub = rospy.Subscriber(self.left_image_topic, Image, callback=self._left_image_callback, queue_size=1)
-            self.right_sub = rospy.Subscriber(self.right_image_topic, Image, callback=self._right_image_callback, queue_size=1)
-        
-    def run(self):
-        self.info.append("Up and running!")
-        self.info.print()
-        rate = rospy.Rate(1)
-        
-        while not rospy.is_shutdown():
-            if self.predict_on_static_image:
-                self.image_static_pub.publish(self.static_image_ros)
-                with torch.no_grad():
-                    self.step()
-            rate.sleep()
-
     def step(self):
         inference_img = copy.deepcopy(self.left_image)
         if inference_img is not None:
@@ -163,30 +137,7 @@ class ObjectKeypointPipeline:
             self._publish_heatmap_raw(raw_heatmap, objects)
             self._publish_keypoints(objects, self.left_image_ts)
 
-    ### Images callbacks
-    def _right_image_callback(self, image):
-        img = self.bridge.imgmsg_to_cv2(image, 'rgb8')
-        self.right_image = img
-        self.right_image_ts = image.header.stamp
-
-    def _left_image_callback(self, image):
-        # this runs async with the step --> bad timing
-        img = self.bridge.imgmsg_to_cv2(image, 'rgb8')
-        self.left_image = img
-        self.left_image_ts = image.header.stamp
-        with torch.no_grad():
-            self.step()
-
-    ### Utilities and conversions
-    def _process_static_image(self):
-        """ 
-        Debug method to parsa a static image instead of subscribing to a ROS image stream 
-        """
-        self.left_image = cv2.imread(self.image_file)
-        self.left_image_ts = rospy.get_rostime()
-        self.static_image_ros = self.bridge.cv2_to_imgmsg(self.left_image, "rgb8")
-
-        
+    ### Utilities and conversions    
     def _preprocess_image(self, image):
         self.scale = np.array([image.shape[1] / self.input_size[1], image.shape[0] / self.input_size[0]])
         self.global_scale = self.scale * self.in_out_scale
@@ -291,9 +242,96 @@ class ObjectKeypointPipeline:
         img_msg = self.bridge.cv2_to_imgmsg(img[:, :, :3], encoding='passthrough')
         self.annotation_img_pub.publish(img_msg)
 
-if __name__ == "__main__":
-    with torch.no_grad():
-        rospy.init_node("object_keypoints_ros")
-        keypoint_pipeline = ObjectKeypointPipeline()
-        keypoint_pipeline.run()
+#### Class sepcializations
+
+class ObjectKeypointsContinuous(ObjectKeypointPipeline):
+    """
+    Uses ROS subscribers to image streams to get and process the image
+    """
+    def __init__(self):
+        ObjectKeypointPipeline.__init__(self)
+        self.left_sub = rospy.Subscriber(self.left_image_topic, Image, callback=self._left_image_callback, queue_size=1)
+        self.right_sub = rospy.Subscriber(self.right_image_topic, Image, callback=self._right_image_callback, queue_size=1)
     
+    ### Images callbacks
+    def _right_image_callback(self, image):
+        img = self.bridge.imgmsg_to_cv2(image, 'rgb8')
+        self.right_image = img
+        self.right_image_ts = image.header.stamp
+
+    def _left_image_callback(self, image):
+        # this runs async with the step --> bad timing
+        img = self.bridge.imgmsg_to_cv2(image, 'rgb8')
+        self.left_image = img
+        self.left_image_ts = image.header.stamp
+        with torch.no_grad():
+            self.step()
+
+    def run(self):
+        self.info.append("Up and running!")
+        self.info.print()
+        rate = rospy.Rate(10)
+        while not rospy.is_shutdown():
+            rate.sleep()
+
+class ObjectKeypointsStatic(ObjectKeypointPipeline):
+    """
+    Uses a path to a image file to process the file and provide annotated output (same as per continuous stream)
+    """
+    def __init__(self):
+        ObjectKeypointPipeline.__init__(self)
+        self.static_image_ros = None
+        self.image_file = rospy.get_param("~image_file", "")
+        
+        if not os.path.isfile(self.image_file):
+            raise NameError("Failed to find file {}".format(self.image_file))
+            
+        self._process_static_image()
+
+    def _process_static_image(self):
+        """ 
+        Debug method to parse a static image instead of subscribing to a ROS image stream 
+        """
+        self.left_image = cv2.imread(self.image_file)
+        self.left_image_ts = rospy.get_rostime()
+        self.static_image_ros = self.bridge.cv2_to_imgmsg(self.left_image, "rgb8")
+
+    def run(self):
+        self.info.append("Up and running!")
+        self.info.print()
+        rate = rospy.Rate(10)
+        
+        while not rospy.is_shutdown():
+            self.image_static_pub.publish(self.static_image_ros)
+            with torch.no_grad():
+                self.step()
+            rate.sleep()
+
+class ObjectKeypointsService(ObjectKeypointPipeline):
+    """
+    Implements a perception service, that returns detections on demand
+    """
+    def __init__(self):
+        ObjectKeypointPipeline.__init__(self)
+
+    def _image_callback(self, req):
+        #TODO(giuseppe)
+        pass
+
+def main():
+    operation_mode = rospy.get_param("~operation_mode", "continous")
+    if operation_mode == "continous":
+        keypoint_pipeline = ObjectKeypointsContinuous()
+    elif operation_mode == "static":
+        keypoint_pipeline = ObjectKeypointsStatic()
+    elif operation_mode == "service":
+        keypoint_pipeline = ObjectKeypointsService()
+    else:
+        rospy.logerr("Unknown operation mode [{}]".format(operation_mode))
+    keypoint_pipeline.run()
+    
+
+if __name__ == "__main__":
+    rospy.init_node("object_keypoints_ros")
+    main()
+        
