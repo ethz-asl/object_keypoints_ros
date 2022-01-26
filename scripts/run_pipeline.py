@@ -336,6 +336,12 @@ class ObjectKeypointsService(ObjectKeypointPipeline):
         self.info.print()
         return res
 
+    def run(self):
+        self.info.append("Up and running!")
+        self.info.print()
+
+        rospy.spin()
+
 def main():
     operation_mode = rospy.get_param("~operation_mode", "continous")
     if operation_mode == "continous":
