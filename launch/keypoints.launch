@@ -11,6 +11,7 @@
   <arg name="keypoints_file"    default="$(find object_keypoints_ros)/config/valve.json"/>
   <arg name="image_file"        default="$(find object_keypoints_ros)/resources/valve3_gt.png"/>
   <arg name="rviz_config"       default="$(find object_keypoints_ros)/config/valve.rviz"/>
+  <arg name="gpu"               default="true"/>
   
   <node name="object_keypoints_ros" pkg="object_keypoints_ros" type="run_pipeline.py" output="screen">
     <param name="left_image_topic"    value="$(arg image_topic)" />
@@ -21,7 +22,7 @@
     <param name="keypoints"           value="$(arg keypoints_file)" />
     <param name="image_file"          value="$(arg image_file)"/>
     <param name="pnp"                 value="false" type="bool" />
-    <param name="gpu"                 value="false" type="bool" />
+    <param name="gpu"                 value="$(arg gpu)" type="bool" />
     <param name="verbose"             value="false"/>
     <param name="operation_mode"      value="static"/>
   </node>
