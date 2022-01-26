@@ -19,6 +19,7 @@ from perception.datasets.video import SceneDataset
 
 from sensor_msgs.msg import Image
 from object_keypoints_ros.msg import Keypoint, Keypoints
+from object_keypoints_ros.srv import KeypointsDetection, KeypointsDetectionResponse, KeypointsDetectionRequest
 
 
 class Info:
@@ -119,6 +120,9 @@ class ObjectKeypointPipeline:
         self.annotation_img_pub = rospy.Publisher("object_keypoints_ros/annotation", Image, queue_size=1)
         self.keypoints_pub =  rospy.Publisher("object_keypoints_ros/keypoints", Keypoints, queue_size=1)
         
+        # Messages
+        self.kpts_msg = Keypoints()
+        
     def step(self):
         inference_img = copy.deepcopy(self.left_image)
         if inference_img is not None:
@@ -191,14 +195,15 @@ class ObjectKeypointPipeline:
    
     ### Publish methods
     def _publish_keypoints(self, objects, time):
+        self.kpts_msg = Keypoints()
+        self.kpts_msg.header.stamp = time
+        
         keypoints = objects[0]['keypoints']
         n_kpts = len(self.keypoint_config['keypoint_config'])
         if (len(keypoints)-1) != n_kpts:   # the first is a fictious keypoint 
             rospy.logwarn_throttle(2.0, "Not publishing keypoints. Detected less then specified ({} < {})".format(len(keypoints)-1, n_kpts))
             return
     
-        kpts_msg = Keypoints()
-        kpts_msg.header.stamp = time
         for i in range(1, n_kpts+1):
             n_kpt_this_class_found = keypoints[i].shape[0]
             n_kpt_this_class = self.keypoint_config['keypoint_config'][i-1]
@@ -210,8 +215,8 @@ class ObjectKeypointPipeline:
                 kpt_msg = Keypoint()
                 kpt_msg.x = keypoints[i][j][0]
                 kpt_msg.y = keypoints[i][j][1]
-                kpts_msg.keypoints.append(kpt_msg)
-        self.keypoints_pub.publish(kpts_msg)
+                self.kpts_msg.keypoints.append(kpt_msg)
+        self.keypoints_pub.publish(self.kpts_msg)
 
     def _publish_heatmaps(self, left=None, right=None, left_keypoints=None, right_keypoints=None):
 
@@ -313,10 +318,23 @@ class ObjectKeypointsService(ObjectKeypointPipeline):
     """
     def __init__(self):
         ObjectKeypointPipeline.__init__(self)
+        self.detection_srv = rospy.Service("/object_keypoints_ros/detect", KeypointsDetection, self._image_callback)
 
-    def _image_callback(self, req):
-        #TODO(giuseppe)
-        pass
+    def _image_callback(self, req: KeypointsDetectionRequest):
+        self.info.append("Processing detection request...")
+        self.info.append("Image at time {}".format(req.rgb.header.stamp.to_sec()))
+        self.info.print()
+
+        self.left_image = req.rgb
+        self.left_image_ts = req.rgb.header.stamp
+        with torch.no_grad():
+            self.step()
+
+        res = KeypointsDetectionResponse()
+        res.detection = self.kpts_msg
+        self.info.append("Detection done!")
+        self.info.print()
+        return res
 
 def main():
     operation_mode = rospy.get_param("~operation_mode", "continous")
