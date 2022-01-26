@@ -10,6 +10,7 @@
   <arg name="model"             default="$(find object_keypoints_ros)/models/$(arg model_name).pt"/>
   <arg name="keypoints_file"    default="$(find object_keypoints_ros)/config/valve.json"/>
   <arg name="image_file"        default="$(find object_keypoints_ros)/resources/valve3_gt.png"/>
+  <arg name="rviz"              default="true"/>
   <arg name="rviz_config"       default="$(find object_keypoints_ros)/config/valve.rviz"/>
   <arg name="gpu"               default="true"/>
   <arg name="operation_mode"    default="static"/>
@@ -35,7 +36,7 @@
   <node pkg="rosbag" type="play" name="rosbag_play_recoreded" args="$(arg bag_file)" if="$(arg load_bag_filepath)" />
 
   <!-- Open Rviz -->
-  <node name="$(anon rviz)" pkg="rviz" type="rviz" args="-d $(arg rviz_config)" output="screen"/>
+  <node name="$(anon rviz)" pkg="rviz" type="rviz" args="-d $(arg rviz_config)" output="screen" if="$(arg rviz)"/>
 
 
 </launch>

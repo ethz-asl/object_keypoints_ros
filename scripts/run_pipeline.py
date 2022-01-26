@@ -325,7 +325,7 @@ class ObjectKeypointsService(ObjectKeypointPipeline):
         self.info.append("Image at time {}".format(req.rgb.header.stamp.to_sec()))
         self.info.print()
 
-        self.left_image = req.rgb
+        self.left_image = self.bridge.imgmsg_to_cv2(req.rgb, 'rgb8')
         self.left_image_ts = req.rgb.header.stamp
         with torch.no_grad():
             self.step()
