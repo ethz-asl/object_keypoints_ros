@@ -213,8 +213,8 @@ class ObjectKeypointPipeline:
             
             for j in range(n_kpt_this_class):
                 kpt_msg = Keypoint()
-                kpt_msg.x = keypoints[i][j][0]
-                kpt_msg.y = keypoints[i][j][1]
+                kpt_msg.x = keypoints[i][j][0] * self.global_scale[0]
+                kpt_msg.y = keypoints[i][j][1] * self.global_scale[1]
                 self.kpts_msg.keypoints.append(kpt_msg)
         self.keypoints_pub.publish(self.kpts_msg)
 
