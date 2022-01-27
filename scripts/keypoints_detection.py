@@ -141,7 +141,7 @@ class ObjectKeypointPipeline:
             self._publish_heatmap_raw(raw_heatmap, objects)
             self._publish_keypoints(objects, self.left_image_ts)
 
-    ### Utilities and conversions    
+    ### Utilities and conversions
     def _preprocess_image(self, image):
         self.scale = np.array([image.shape[1] / self.input_size[1], image.shape[0] / self.input_size[0]])
         self.global_scale = self.scale * self.in_out_scale
@@ -318,9 +318,9 @@ class ObjectKeypointsService(ObjectKeypointPipeline):
     """
     def __init__(self):
         ObjectKeypointPipeline.__init__(self)
-        self.detection_srv = rospy.Service("/object_keypoints_ros/detect", KeypointsDetection, self._image_callback)
+        self.detection_srv = rospy.Service("/object_keypoints_ros/detect", KeypointsDetection, self._detection_callback)
 
-    def _image_callback(self, req: KeypointsDetectionRequest):
+    def _detection_callback(self, req: KeypointsDetectionRequest):
         self.info.append("Processing detection request...")
         self.info.append("Image at time {}".format(req.rgb.header.stamp.to_sec()))
         self.info.print()

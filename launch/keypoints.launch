@@ -32,7 +32,7 @@
     <param name="operation_mode"      value="$(arg operation_mode)"/>
   </node>
 
-  <node name="object_keypoints_ros_perception" pkg="object_keypoints_ros" type="keypoints_perception.py" output="screen">
+  <node name="object_keypoints_ros_perception" pkg="object_keypoints_ros" type="keypoints_perception.py" output="screen" if="$(eval arg('operation_mode') == 'service')">
     <param name="base_frame" value="$(arg base_frame)"/>
     <param name="camera_frame" value="$(arg camera_frame)"/>
     <param name="image_topic" value="$(arg image_topic)"/>
