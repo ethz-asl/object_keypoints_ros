@@ -4,7 +4,10 @@
   <arg name="load_bag_filepath" default="false"/>
   <arg name="bag_file"          default=""/>
   <arg name="calibration_file"  default="$(find object_keypoints_ros)/config/calibration.yaml"/>
-  <arg name="image_topic"       default="/camera/color/image_row"/>
+  <arg name="image_topic"       default="/camera/color/image_raw"/>
+  <arg name="depth_topic"       default="/camera/depth/image_rect_raw"/>
+  <arg name="calibration_topic" default="/camera_info"/>
+  <arg name="base_frame"        default="camera_color_optical_frame"/>
   <arg name="camera_frame"      default="camera_color_optical_frame"/>
   <arg name="model_name"        default="valve_depth"/>
   <arg name="model"             default="$(find object_keypoints_ros)/models/$(arg model_name).pt"/>
@@ -15,7 +18,7 @@
   <arg name="gpu"               default="true"/>
   <arg name="operation_mode"    default="static"/>
   
-  <node name="object_keypoints_ros" pkg="object_keypoints_ros" type="run_pipeline.py" output="screen">
+  <node name="object_keypoints_ros_detection" pkg="object_keypoints_ros" type="keypoints_detection.py" output="screen">
     <param name="left_image_topic"    value="$(arg image_topic)" />
     <param name="right_image_topic"   value="$(arg image_topic)" />
     <param name="left_camera_frame"   value="$(arg image_topic)" />
@@ -29,11 +32,19 @@
     <param name="operation_mode"      value="$(arg operation_mode)"/>
   </node>
 
+  <node name="object_keypoints_ros_perception" pkg="object_keypoints_ros" type="keypoints_perception.py" output="screen">
+    <param name="base_frame" value="$(arg base_frame)"/>
+    <param name="camera_frame" value="$(arg camera_frame)"/>
+    <param name="image_topic" value="$(arg image_topic)"/>
+    <param name="depth_topic" value="$(arg depth_topic)"/>
+    <param name="calibration_topic" value="$(arg calibration_topic)"/>
+  </node>
+
   <group if="$(arg load_cam)">
     <include file="$(find realsense2_camera)/launch/rs_camera.launch" />
   </group>
   
-  <node pkg="rosbag" type="play" name="rosbag_play_recoreded" args="$(arg bag_file)" if="$(arg load_bag_filepath)" />
+  <node pkg="rosbag" type="play" name="rosbag_play_recorded" args="$(arg bag_file)" if="$(arg load_bag_filepath)" />
 
   <!-- Open Rviz -->
   <node name="$(anon rviz)" pkg="rviz" type="rviz" args="-d $(arg rviz_config)" output="screen" if="$(arg rviz)"/>
