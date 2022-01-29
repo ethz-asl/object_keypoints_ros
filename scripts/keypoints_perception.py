@@ -75,7 +75,6 @@ class PerceptionModule:
 
     def _perception_callback(self, req: KeypointsPerceptionRequest):
         res = KeypointsPerceptionResponse()
-        res.header.frame_id = self.base_frame
         res.keypoints = self.perceive()
         return res
 
@@ -84,12 +83,9 @@ class PerceptionModule:
         Uses a keypoint detection service and depth information to perceive 3D points
         :return: 3D keypoint poses
         """
-        try:
-            self.detection_srv_client.wait_for_service(timeout=3)
-        except rospy.ROSException as exc:
-            rospy.logwarn("Service {} not available yet".format(self.detection_srv_client.resolved_name))
-            return
-
+        self.detection_srv_client.wait_for_service(timeout=10)
+        rospy.logwarn("Service {} not available yet".format(self.detection_srv_client.resolved_name))
+        
         if self.calibration is None:
             rospy.logwarn("No calibration received yet, skipping detection")
             return
