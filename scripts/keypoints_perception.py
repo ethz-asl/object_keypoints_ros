@@ -75,6 +75,7 @@ class PerceptionModule:
 
     def _perception_callback(self, req: KeypointsPerceptionRequest):
         res = KeypointsPerceptionResponse()
+        res.header.frame_id = self.base_frame
         res.keypoints = self.perceive()
         return res
 
