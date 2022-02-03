@@ -17,7 +17,7 @@ from perception import pipeline
 from perception.utils import camera_utils
 from perception.datasets.video import SceneDataset
 
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, CameraInfo
 from object_keypoints_ros.msg import Keypoint, Keypoints
 from object_keypoints_ros.srv import KeypointsDetection, KeypointsDetectionResponse, KeypointsDetectionRequest
 
@@ -60,9 +60,11 @@ class ObjectKeypointPipeline:
         self.calibration_file = rospy.get_param('~calibration')
         self.verbose = rospy.get_param('~verbose', False)
     
+        self.camera_info_topic = rospy.get_param("~calibration_topic", "/camera_info")
         self.left_image_topic = rospy.get_param("~left_image_topic", "/zedm/zed_node/left_raw/image_raw_color")
         self.right_image_topic = rospy.get_param("~right_image_topic", "/zedm/zed_node/right_raw/image_raw_color")
         self.left_camera_frame = rospy.get_param('~left_camera_frame')
+        self.camera_info = None
         self.left_image = None
         self.left_image_ts = None
         self.right_image = None
@@ -93,15 +95,9 @@ class ObjectKeypointPipeline:
         self.rgb_mean = torch.tensor([0.5, 0.5, 0.5], requires_grad=False, dtype=torch.float32)[:, None, None]
         self.rgb_std = torch.tensor([0.25, 0.25, 0.25], requires_grad=False, dtype=torch.float32)[:, None, None]
         
-        # Camera models
-        self.left_camera = camera_utils.from_calibration(self.calibration_file)
-        self.right_camera = camera_utils.from_calibration(self.calibration_file)
         
         # Dimensions
         self.in_out_scale = np.array(self.input_size) / np.array(self.prediction_size)
-
-        # set the camera model to be used in the inference pipeline
-        self.pipeline.reset(self.left_camera)
 
         # TF
         self.tf_buffer = tf2_ros.Buffer()
@@ -119,10 +115,31 @@ class ObjectKeypointPipeline:
         self.heatmap_raw_pub = rospy.Publisher("object_keypoints_ros/heatmap_raw", Image, queue_size=1)
         self.annotation_img_pub = rospy.Publisher("object_keypoints_ros/annotation", Image, queue_size=1)
         self.keypoints_pub =  rospy.Publisher("object_keypoints_ros/keypoints", Keypoints, queue_size=1)
-        
+
+        # Camera models
+        if os.path.isfile(self.calibration_file):
+            self.left_camera = camera_utils.from_calibration(self.calibration_file)
+            self.right_camera = camera_utils.from_calibration(self.calibration_file)
+        else:
+            rospy.logwarn("No file {} found. Default to CameraInfo on topic {}".format(self.calibration_file, self.camera_info_topic))
+            self.camera_info_sub = rospy.Subscriber(self.camera_info_topic, CameraInfo, self._camera_info_cb)
+            rate = rospy.Rate(1)
+            while self.camera_info == None:
+                rospy.logwarn("Waiting for {} msg.".format(self.camera_info_topic))
+                rate.sleep()
+            rospy.loginfo("Camera info received.")
+            self.left_camera = camera_utils.from_msg(self.camera_info)
+            self.right_camera = camera_utils.from_msg(self.camera_info)
+
+        # set the camera model to be used in the inference pipeline
+        self.pipeline.reset(self.left_camera)
+
         # Messages
         self.kpts_msg = Keypoints()
-        
+
+    def _camera_info_cb(self, msg):
+        self.camera_info = msg
+
     def step(self):
         inference_img = copy.deepcopy(self.left_image)
         if inference_img is not None:
