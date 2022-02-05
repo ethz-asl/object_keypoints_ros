@@ -3,16 +3,17 @@
   <arg name="load_cam" default="false"/>
   <arg name="load_bag" default="false"/>
   <arg name="load_vistools" default="false"/>
+  <arg name="log_debug" default="false"/>
 
   <node name="object_keypoints_ros" pkg="object_keypoints_ros" type="run_pipeline.py" output="screen">
     <param name="left_image_topic" value="/camera/color/image_raw" />
-    <param name="right_image_topic" value="/camera/color/image_raw" />
     <param name="left_camera_frame" value="camera_color_optical_frame" />
-    <param name="load_model" value="$(find object_keypoints_ros)/models/model_20.pt" />
+    <param name="depth_image_topic" value="/camera/aligned_depth_to_color/image_raw"/>
+    <param name="load_model" value="/home/user/perception/model/model_med_depth_36.pt" />
     <param name="calibration" value="$(find object_keypoints_ros)/config/calibration.yaml" />
     <param name="keypoints" value="$(find object_keypoints_ros)/config/cups.json" />
-    <param name="pnp" value="false" type="bool" />
     <param name="gpu" value="true" type="bool" />
+    <param name="log_debug" value="$(arg log_debug)" type ="bool" />
   </node>
 
   <!-- add kp markers topic "kp_3d_marker" for rviz -->>

@@ -8,7 +8,6 @@ from numpy.core.fromnumeric import size
 # sys.path.insert(0, '/home/user/catkin_ws/devel/lib/python3/dist-packages')
 # sys.path.insert(0, '/home/usr/thesis/perception/kp_new')
 import json
-
 import rospy
 import message_filters
 import torch
@@ -25,7 +24,6 @@ from perception import pipeline
 from perception.utils import camera_utils
 from matplotlib import cm
 from vision_msgs.msg import BoundingBox3D
-#from . import utils
 import utils
 from visualization_msgs.msg import Marker
 from visualization_msgs.msg import MarkerArray
@@ -39,59 +37,55 @@ def _to_msg(keypoint, time, frame):
     msg.point.z = keypoint[2]
     return msg
 
-
 class ObjectKeypointPipeline:
     def __init__(self):
         left_image_topic = rospy.get_param("object_keypoints_ros/left_image_topic", "/zedm/zed_node/left_raw/image_raw_color")
         self.left_camera_frame = rospy.get_param('object_keypoints_ros/left_camera_frame')
         self.left_sub = rospy.Subscriber(left_image_topic, Image, callback=self._left_image_callback, queue_size=1)
+        depth_image_topic = rospy.get_param("object_keypoints_ros/depth_image_topic", "/camera/aligned_depth_to_color/image_raw")
+        self.depth_sub = rospy.Subscriber(depth_image_topic, Image, callback=self._depth_image_callback, queue_size=1)
         self.left_image = None
         self.left_image_ts = None
-        self.right_image = None
-        self.right_image_ts = None
         self.bridge = CvBridge()
         self.use_gpu = rospy.get_param("object_keypoints_ros/gpu", True)
+        self.info_period = 1.0
         
         # params
         self.input_size = (511, 511)  # TODO: hard-coded
         self.IMAGE_SIZE = (1280, 720)
-        
         self.prediction_size = SceneDataset.prediction_size # 64 x 64
         self.image_offset = SceneDataset.image_offset
         
         # 2D objects
         self.points_left = []
-            
+        
+        # config    
         self.keypoint_config_path = rospy.get_param('object_keypoints_ros/keypoints')
         with open(self.keypoint_config_path, 'rt') as f:
             self.keypoint_config = json.load(f)
-
+        
+        # model
         model = rospy.get_param('object_keypoints_ros/load_model', "/home/ken/Hack/catkin_ws/src/object_keypoints/model/modelv2.pt")
-       
-        if rospy.get_param('object_keypoints_ros/pnp', False):
-            self.pipeline = pipeline.PnPKeypointPipeline(model, self._read_keypoints(), torch.cuda.is_available())
-        else:
-            _3d_point = []
-            self.pipeline = pipeline.LearnedKeypointTrackingPipeline(model, self.use_gpu,
+        _3d_point = []
+        self.pipeline = pipeline.LearnedKeypointTrackingPipeline(model, self.use_gpu,
                 self.prediction_size, _3d_point, self.keypoint_config)
-
         self.rgb_mean = torch.tensor([0.5, 0.5, 0.5], requires_grad=False, dtype=torch.float32)[:, None, None]
         self.rgb_std = torch.tensor([0.25, 0.25, 0.25], requires_grad=False, dtype=torch.float32)[:, None, None]
         
+        # calibration
         self._read_calibration()
         self.scaling_factor = np.array(self.IMAGE_SIZE) / np.array(self.prediction_size)
-        rospy.loginfo("scalling facotr: ")
-        rospy.loginfo(self.scaling_factor)
+        rospy.logdebug("scalling facotr is : ")
+        rospy.logdebug(self.scaling_factor)
         
         # Monocular Version
         self.pipeline.reset(self.camera_small)
-
         self._compute_bbox_dimensions()
-
         
         # kp marker
         self.kpArray = MarkerArray()
         self.kp_publisher = rospy.Publisher('kp_world_pos',MarkerArray, queue_size=10)
+        
         # kp points s
         self.kp_poses = PoseArray()
         self.kp_poses.header.frame_id = self.left_camera_frame
@@ -99,16 +93,19 @@ class ObjectKeypointPipeline:
         
         # Publishers
         self.center_point_publisher = rospy.Publisher("object_keypoints_ros/center", PointStamped, queue_size=1)
-        self.left_heatmap_pub = rospy.Publisher("object_keypoints_ros/heatmap_left", Image, queue_size=1)
-        self.right_heatmap_pub = rospy.Publisher("object_keypoints_ros/heatmap_right", Image, queue_size=1)
         self.pose_pub = rospy.Publisher("object_keypoints_ros/pose", PoseStamped, queue_size=1)
         self.result_img_pub = rospy.Publisher("object_keypoints_ros/result_img", Image, queue_size=1)
+        
         # Only used if an object mesh is set.
         if self.bbox_size is not None:
             self.bbox_pub = rospy.Publisher("object_keypoints_ros/bbox", BoundingBox3D, queue_size=1)
         else:
             self.bbox_pub = None
 
+        # to vis kp in overlay image
+        self.green = np.zeros((20,20,3))
+        self.green[:,:,1] = 100
+        
     def _read_calibration(self):
         path = rospy.get_param('object_keypoints_ros/calibration')
         params = camera_utils.load_calibration_params(path)
@@ -148,7 +145,10 @@ class ObjectKeypointPipeline:
         img = self.bridge.imgmsg_to_cv2(image, 'rgb8')
         self.left_image = img
         self.left_image_ts = image.header.stamp
-
+    
+    def _depth_image_callback(self,image):
+        self.depth_img = self.bridge.imgmsg_to_cv2(image)
+    
     def _preprocess_image(self, image):
         image = image.transpose([2, 0, 1])
         image = torch.tensor(image / 255.0, dtype=torch.float32)
@@ -166,16 +166,6 @@ class ObjectKeypointPipeline:
         pose_msg = ros_utils.transform_to_pose(T, self.left_camera_frame, rospy.Time(0))
         self.pose_pub.publish(pose_msg)
         self._publish_bounding_box(pose_msg)
-
-    def _publish_heatmaps(self, left, right, left_keypoints, right_keypoints):
-        left = ((left + 1.0) * 0.5).sum(axis=0)
-        left = np.clip(cm.inferno(left) * 255.0, 0, 255.0).astype(np.uint8)
-
-        for kp in left_keypoints:
-            kp = kp.round().astype(int)
-            left = cv2.circle(left, (kp[0], kp[1]), radius=2, color=(0, 255, 0), thickness=-1)
-        left_msg = self.bridge.cv2_to_imgmsg(left[:, :, :3], encoding='passthrough')
-        self.left_heatmap_pub.publish(left_msg)
 
     def _publish_bounding_box(self, T, pose_msg):
         if self.bbox_size is not None:
@@ -221,20 +211,19 @@ class ObjectKeypointPipeline:
         
         I = torch.eye(4)[None]
         
+        # process rgb image
         if self.left_image is not None:
             left_image = self._preprocess_image(self.left_image)
             objects, heatmap = self.pipeline(left_image)
             self.left_image = None
  
             heatmap_left = self._to_heatmap(heatmap[0].numpy())
-            
             left_image = left_image.cpu().numpy()[0]
-            
-            #rospy.loginfo("image size: ")              # [3, 511, 511]
-            #rospy.loginfo(np.shape(left_image))
+
+            #rospy.loginfo(np.shape(left_image))        # [3, 511, 511]
             
             left_rgb = self._to_image(left_image)
-            image_left = (0.3 * left_rgb + 0.7 * heatmap_left).astype(np.uint8)
+            image_overlay = (0.3 * left_rgb + 0.7 * heatmap_left).astype(np.uint8)
             
             # 2D objects
             self.points_left = []
@@ -268,34 +257,43 @@ class ObjectKeypointPipeline:
                     self.kp_pose.position.z = p_l[0][2]
                     self.kp_poses.poses.append(self.kp_pose)
                 
-                rospy.loginfo("2D kp: ")
-                rospy.loginfo(obj['keypoints'])  # indx in 64,64 image
+                rospy.logdebug_throttle(self.info_period,"2D kp: ")
+                rospy.logdebug_throttle(self.info_period,obj['keypoints'])  # indx in 64,64 image
 
                 # extract 2D keypoints
                 self.points_left = self.kp_map_to_image(obj['keypoints'])
                 
-                rospy.loginfo("after scalling: ")
-                rospy.loginfo(self.points_left)  # indx in 64,64 image
+                rospy.logdebug_throttle(self.info_period,"after scalling: ")
+                rospy.logdebug_throttle(self.info_period,self.points_left)  # indx in 64,64 image
 
+                # overlay the kp to the image
                 for i, pt in enumerate(self.points_left):
                     if pt.size != 0:
-                        green = np.zeros((20,20,3))
-                        green[:,:,1] = 100
-                        image_left[self.points_left[i][0]-10:self.points_left[i][0]+10, self.points_left[i][1]-10:self.points_left[i][1]+10,:] += green.astype(np.uint8)
+                        image_overlay[self.points_left[i][0]-10:self.points_left[i][0]+10, self.points_left[i][1]-10:self.points_left[i][1]+10,:] += self.green.astype(np.uint8)
                 
+                # process depth image  
+                #if self.depth_img is not None:
+                    
             # pub result image
-            self._publish_result(image_left)
+            self._publish_result(image_overlay)
+            
             # pub 3D keypoints
             self._publish_kp_3d_poses()
-            
+        
+
+              
                      
 if __name__ == "__main__":
+    log_debug = rospy.get_param('object_keypoints_ros/log_debug', False)
     with torch.no_grad():
-        rospy.init_node("object_keypoints_ros")
+        if log_debug:
+            rospy.init_node("object_keypoints_ros",log_level=rospy.DEBUG)
+        else:
+            rospy.init_node("object_keypoints_ros",log_level=rospy.INFO)    
         keypoint_pipeline = ObjectKeypointPipeline()
         rate = rospy.Rate(10)
         with torch.no_grad():
             while not rospy.is_shutdown():
-                keypoint_pipeline.step()
+                #keypoint_pipeline.step()
                 rate.sleep()
 
