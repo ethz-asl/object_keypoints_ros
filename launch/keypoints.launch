@@ -4,8 +4,9 @@
   <arg name="load_bag_filepath" default="false"/>
   <arg name="bag_file"          default=""/>
   <arg name="calibration_file"  default="$(find object_keypoints_ros)/config/calibration.yaml"/>
-  <arg name="image_topic"       default="/camera/color/image_raw"/>
-  <arg name="depth_topic"       default="/camera/depth/image_rect_raw"/>
+  <arg name="camera"            default="hand_eye"/>
+  <arg name="image_topic"       default="/$(arg camera)/color/image_raw"/>
+  <arg name="depth_topic"       default="/$(arg camera)/depth/image_rect_raw"/>
   <arg name="calibration_topic" default="/camera_info"/>
   <arg name="base_frame"        default="camera_color_optical_frame"/>
   <arg name="camera_frame"      default="camera_color_optical_frame"/>
