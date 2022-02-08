@@ -66,9 +66,14 @@ class PerceptionModule:
         self.calibration = msg
 
     def _depth_callback(self, msg):
-        MM_2_METER_FACTOR = 0.001 #this is the only multiplier that seems to have sense
+        multiplier = 1.0
+        if msg.encoding == "32FC1":     # already encoded in meters
+            multiplier = 1.0
+        elif msg.encoding == "16UC1":   # encoded in millimiters
+            multiplier = 1000.0
+        
         self.depth_header = msg.header
-        self.depth = MM_2_METER_FACTOR * self.bridge.imgmsg_to_cv2(msg, msg.encoding)
+        self.depth = multiplier * self.bridge.imgmsg_to_cv2(msg, msg.encoding)
 
     def _image_callback(self, msg: Image):
         self.rgb = msg
@@ -83,12 +88,9 @@ class PerceptionModule:
         Uses a keypoint detection service and depth information to perceive 3D points
         :return: 3D keypoint poses
         """
-        try:
-            self.detection_srv_client.wait_for_service(timeout=3)
-        except rospy.ROSException as exc:
-            rospy.logwarn("Service {} not available yet".format(self.detection_srv_client.resolved_name))
-            return
-
+        self.detection_srv_client.wait_for_service(timeout=10)
+        rospy.logwarn("Service {} not available yet".format(self.detection_srv_client.resolved_name))
+        
         if self.calibration is None:
             rospy.logwarn("No calibration received yet, skipping detection")
             return
@@ -137,6 +139,7 @@ class PerceptionModule:
             # TODO not accounting for distortion --> would be better to just operate on undistorted images
             P_cam[0] = (kpt.x - self.calibration.K[2]) * P_cam[2] / self.calibration.K[0]
             P_cam[1] = (kpt.y - self.calibration.K[5]) * P_cam[2] / self.calibration.K[4]
+            rospy.loginfo("Kpt {} in camera frame: {}".format(i, P_cam))
 
             P_base = R_w_cam @ P_cam + t_w_cam
             marker = self._make_marker(i, self.base_frame, P_base[0], P_base[1], P_base[2])

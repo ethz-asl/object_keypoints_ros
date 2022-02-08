@@ -22,7 +22,8 @@
   <node name="object_keypoints_ros_detection" pkg="object_keypoints_ros" type="keypoints_detection.py" output="screen">
     <param name="left_image_topic"    value="$(arg image_topic)" />
     <param name="right_image_topic"   value="$(arg image_topic)" />
-    <param name="left_camera_frame"   value="$(arg image_topic)" />
+    <param name="left_camera_frame"   value="$(arg camera_frame)" />
+    <param name="calibration_topic"   value="$(arg calibration_topic)"/>
     <param name="load_model"          value="$(arg model)"/>
     <param name="calibration"         value="$(arg calibration_file)" />
     <param name="keypoints"           value="$(arg keypoints_file)" />
