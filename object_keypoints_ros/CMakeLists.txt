@@ -3,4 +3,6 @@ project(object_keypoints_ros)
 find_package(catkin REQUIRED)
 catkin_python_setup()
 
-
+set(PACKAGE_DEPENDENCIES
+    keypoint_msgs
+    )

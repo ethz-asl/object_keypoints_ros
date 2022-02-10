@@ -4,7 +4,7 @@
   <version>0.1.0</version>
   <description>Tracking keypoints on objects.</description>
 
-  <maintainer email="kblomqvist@mavt.ethz.ch">fjulian</maintainer>
+  <maintainer email="boyang@ethz.ch">boyang</maintainer>
 
   <license>MIT</license>
 
@@ -14,5 +14,7 @@
   <depend>geometry_msgs</depend>
   <depend>vision_msgs</depend>
   <depend>rospy</depend>
+  <depend>eigen</depend>
+  <depend>keypoint_msgs</depend>
 
 </package>
