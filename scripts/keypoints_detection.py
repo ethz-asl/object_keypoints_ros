@@ -145,6 +145,10 @@ class ObjectKeypointPipeline:
         if inference_img is not None:
             img_in = self._preprocess_image(inference_img)
             objects, heatmap = self.pipeline(img_in)
+
+            if len(objects) == 0:
+                rospy.logerr("No objects detected")
+                return
             
             if self.verbose:
                 print_objects(objects)
