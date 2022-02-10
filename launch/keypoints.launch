@@ -8,17 +8,17 @@
   <arg name="image_topic"       default="/$(arg camera)/color/image_raw"/>
   <arg name="depth_topic"       default="/$(arg camera)/depth/image_rect_raw"/>
   <arg name="calibration_topic" default="/camera_info"/>
-  <arg name="base_frame"        default="camera_color_optical_frame"/>
-  <arg name="camera_frame"      default="camera_color_optical_frame"/>
-  <arg name="model_name"        default="valve_depth"/>
-  <arg name="model"             default="$(find object_keypoints_ros)/models/$(arg model_name).pt"/>
-  <arg name="keypoints_file"    default="$(find object_keypoints_ros)/config/valve.json"/>
-  <arg name="image_file"        default="$(find object_keypoints_ros)/resources/valve3_gt.png"/>
+  <arg name="base_frame"        default="$(arg camera)_color_optical_frame"/>
+  <arg name="camera_frame"      default="$(arg camera)_color_optical_frame"/>
+  <arg name="model_name"        default="valve"/>
+  <arg name="model"             default="$(find object_keypoints_ros)/models/$(arg model_name)_depth.pt"/>
+  <arg name="keypoints_file"    default="$(find object_keypoints_ros)/config/$(arg model_name).json"/>
+  <arg name="image_file"        default="$(find object_keypoints_ros)/resources/$(arg model_name)3_gt.png"/>
   <arg name="rviz"              default="true"/>
   <arg name="rviz_config"       default="$(find object_keypoints_ros)/config/valve.rviz"/>
   <arg name="gpu"               default="true"/>
   <arg name="operation_mode"    default="static"/>
-  
+
   <node name="object_keypoints_ros_detection" pkg="object_keypoints_ros" type="keypoints_detection.py" output="screen">
     <param name="left_image_topic"    value="$(arg image_topic)" />
     <param name="right_image_topic"   value="$(arg image_topic)" />
@@ -45,7 +45,7 @@
   <group if="$(arg load_cam)">
     <include file="$(find realsense2_camera)/launch/rs_camera.launch" />
   </group>
-  
+
   <node pkg="rosbag" type="play" name="rosbag_play_recorded" args="$(arg bag_file)" if="$(arg load_bag_filepath)" />
 
   <!-- Open Rviz -->
