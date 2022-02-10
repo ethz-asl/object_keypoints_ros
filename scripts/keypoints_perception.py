@@ -11,7 +11,7 @@ from geometry_msgs.msg import PoseArray
 from cv_bridge import CvBridge
 
 from object_keypoints_ros.msg import Keypoints
-from object_keypoints_ros.srv import KeypointsDetection, KeypointsDetectionRequest, KeypointsDetectionResponse,\
+from object_keypoints_ros.srv import KeypointsDetection, KeypointsDetectionRequest, KeypointsDetectionResponse, \
     KeypointsPerception, KeypointsPerceptionResponse, KeypointsPerceptionRequest
 
 class PerceptionModule:
@@ -70,8 +70,8 @@ class PerceptionModule:
         if msg.encoding == "32FC1":     # already encoded in meters
             multiplier = 1.0
         elif msg.encoding == "16UC1":   # encoded in millimiters
-            multiplier = 1000.0
-        
+            multiplier = 0.001
+
         self.depth_header = msg.header
         self.depth = multiplier * self.bridge.imgmsg_to_cv2(msg, msg.encoding)
 
@@ -90,7 +90,7 @@ class PerceptionModule:
         """
         self.detection_srv_client.wait_for_service(timeout=10)
         rospy.logwarn("Service {} not available yet".format(self.detection_srv_client.resolved_name))
-        
+
         if self.calibration is None:
             rospy.logwarn("No calibration received yet, skipping detection")
             return
