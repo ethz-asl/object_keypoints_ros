@@ -148,6 +148,8 @@ class ObjectKeypointPipeline:
 
             if len(objects) == 0:
                 rospy.logerr("No objects detected")
+                self.kpts_msg = Keypoints()
+                self.kpts_msg.header.stamp = self.left_image_ts
                 return
             
             if self.verbose:
