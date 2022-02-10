@@ -8,7 +8,7 @@
   <arg name="image_topic"       default="/$(arg camera)/color/image_raw"/>
   <arg name="depth_topic"       default="/$(arg camera)/depth/image_rect_raw"/>
   <arg name="calibration_topic" default="/camera_info"/>
-  <arg name="base_frame"        default="$(arg camera)_color_optical_frame"/>
+  <arg name="base_frame"        default="world"/>
   <arg name="camera_frame"      default="$(arg camera)_color_optical_frame"/>
   <arg name="model_name"        default="valve"/>
   <arg name="model"             default="$(find object_keypoints_ros)/models/$(arg model_name)_depth.pt"/>
