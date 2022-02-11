@@ -23,7 +23,7 @@ from perception.utils import camera_utils
 from matplotlib import cm
 from vision_msgs.msg import BoundingBox3D
 import utils
-from keypoint_msgs.msg import KeypointsArray, keypoint
+from keypoint_msgs.msg import KeypointsArray, keypoint, ObjectsArray
     
 
 class ObjectKeypointPipeline:
@@ -67,11 +67,12 @@ class ObjectKeypointPipeline:
         self._compute_bbox_dimensions()
         
         # kp ros msg
+        self.ObjectArray = ObjectsArray()
         self.keypointArray = KeypointsArray()
         
         # Publishers
         self.result_img_pub = rospy.Publisher("object_keypoints_ros/result_img", Image, queue_size=1)
-        self.kp_msg_pub = rospy.Publisher("object_keypoints_ros/keypoints_array", KeypointsArray, queue_size=1)
+        self.kp_msg_pub = rospy.Publisher("object_keypoints_ros/keypoints_array", ObjectsArray, queue_size=1)
         
         # Only used if an object mesh is set.
         if self.bbox_size is not None:
@@ -134,14 +135,20 @@ class ObjectKeypointPipeline:
     
     def _to_msg(self, objs):
         
-        self.keypointArray = KeypointsArray()
-        self.keypointArray.header.stamp = self.left_image_ts
-        self.keypointArray.header.frame_id = self.camera_frame
-        self.keypointArray.Size = 0
+        self.ObjectArray = ObjectsArray()
+        self.ObjectArray.header.stamp = self.left_image_ts
+        self.ObjectArray.header.frame_id = self.camera_frame
+        self.ObjectArray.ObjectSize = len(objs)
+        self.ObjectArray.PointSize = 0 
         
         for i, obj in enumerate(objs):
             
-            self.keypointArray.Size += len(obj['p_C'])
+            self.keypointArray = KeypointsArray()
+            self.keypointArray.header.stamp = self.left_image_ts
+            self.keypointArray.header.frame_id = self.camera_frame
+            self.keypointArray.PointSize = len(obj['p_C'])
+            self.ObjectArray.PointSize += len(obj['p_C'])
+            
             for j, (p_world, p_center) in enumerate(zip(obj['p_C'],obj['keypoints'])):
               
                 keypoint_msg = keypoint()
@@ -173,7 +180,10 @@ class ObjectKeypointPipeline:
                 rospy.logdebug_throttle(self.info_period,p_center)  # indx in 64,64 image
                 rospy.logdebug_throttle(self.info_period,"2D kp after scalling in result img: ")
                 rospy.logdebug_throttle(self.info_period,p_img)  # indx in output image
-            
+        
+        
+        self.ObjectArray.KeypointsArrays.append(self.keypointArray)
+        
     def _publish_keypoints(self, keypoints, time):
         for i in range(min(keypoints.shape[0], 4)):
             msg = self._to_msg(keypoints[i], rospy.Time(0), self.camera_frame)
@@ -246,7 +256,7 @@ class ObjectKeypointPipeline:
             self._to_msg(objects)
 
             # publish
-            self.kp_msg_pub.publish(self.keypointArray)
+            self.kp_msg_pub.publish(self.ObjectArray)
                         
             # pub result image, i.e. self.image_overlay
             self._publish_result_img()

@@ -12,7 +12,7 @@ find_package(Eigen3 REQUIRED 3.3)
 
 add_message_files(
         DIRECTORY msg
-        FILES keypoint.msg KeypointsArray.msg
+        FILES keypoint.msg KeypointsArray.msg ObjectsArray.msg
 )
 
 add_service_files(

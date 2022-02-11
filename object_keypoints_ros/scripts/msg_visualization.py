@@ -16,7 +16,7 @@ from std_msgs.msg import Header
 from sensor_msgs.msg import Image , PointCloud2, PointField
 from visualization_msgs.msg import Marker
 from visualization_msgs.msg import MarkerArray
-from keypoint_msgs.msg import KeypointsArray, keypoint
+from keypoint_msgs.msg import KeypointsArray, keypoint, ObjectsArray
 
 class Keypoints3dVisualizer:
 
@@ -40,7 +40,7 @@ class Keypoints3dVisualizer:
         self.pointcloud_roi_publisher = rospy.Publisher("kp_msg_vis_node/pcl_roi", PointCloud2, queue_size=1)
         
         # subs
-        self.kp_msg_subscriber = rospy.Subscriber("object_keypoints_ros/keypoints_array", KeypointsArray, self.kp_msgs_callback, queue_size=1)
+        self.kp_msg_subscriber = rospy.Subscriber("object_keypoints_ros/keypoints_array", ObjectsArray, self.kp_msgs_callback, queue_size=1)
         self.depth_subscriber = rospy.Subscriber(self.depth_image_topic, Image, callback=self._depth_img_callback, queue_size=1)
     
       # local node vars
@@ -58,31 +58,33 @@ class Keypoints3dVisualizer:
         kp_marker_array = MarkerArray()
         point_2d = []
         
-        for i, pt in enumerate(msg.keypoints):
-            if pt.valid == False:
-                continue
+        for j, pt_arr in enumerate(msg.KeypointsArrays):
             
-            # kp markers
-            self.kp_marker = Marker()
-            self.kp_marker.header = self.msg_header
-            self.kp_marker.type = Marker.SPHERE
-            self.kp_marker.action = Marker.ADD
-            self.kp_marker.scale.x = 0.01
-            self.kp_marker.scale.y = 0.01
-            self.kp_marker.scale.z = 0.01
-            self.kp_marker.color.a = 1.0   # TODO: for multi-object, set different color based on color idx from msg
-            self.kp_marker.color.r = 1.0
-            self.kp_marker.color.g = 0.0
-            self.kp_marker.color.b = 0.0
-            self.kp_marker.pose.position.x = pt.point3d.x
-            self.kp_marker.pose.position.y = pt.point3d.y
-            self.kp_marker.pose.position.z = pt.point3d.z
-            self.kp_marker.pose.orientation.w = 1.0 
-            self.kp_marker.id = i
-            kp_marker_array.markers.append(self.kp_marker)
-                    
-            # kp idx in 2d img  
-            point_2d.append(pt.point2d)
+            for i, pt in enumerate(pt_arr.keypoints):
+                if pt.valid == False:
+                    continue
+                
+                # kp markers
+                self.kp_marker = Marker()
+                self.kp_marker.header = self.msg_header
+                self.kp_marker.type = Marker.SPHERE
+                self.kp_marker.action = Marker.ADD
+                self.kp_marker.scale.x = 0.01
+                self.kp_marker.scale.y = 0.01
+                self.kp_marker.scale.z = 0.01
+                self.kp_marker.color.a = 1.0   # TODO: for multi-object, set different color based on color idx from msg
+                self.kp_marker.color.r = 1.0
+                self.kp_marker.color.g = 0.0
+                self.kp_marker.color.b = 0.0
+                self.kp_marker.pose.position.x = pt.point3d.x
+                self.kp_marker.pose.position.y = pt.point3d.y
+                self.kp_marker.pose.position.z = pt.point3d.z
+                self.kp_marker.pose.orientation.w = 1.0 
+                self.kp_marker.id = i
+                kp_marker_array.markers.append(self.kp_marker)
+                        
+                # kp idx in 2d img  
+                point_2d.append(pt.point2d)
             
         self.kp_marker_array = kp_marker_array
         self.points_2d = point_2d
@@ -197,7 +199,7 @@ class Keypoints3dVisualizer:
         # heuristic method: take the center keypoint and hard-code the width and length
         
         if len(self.points_2d) == 0:
-            rospy.logwarn(1,"No 2D keypoints input")
+            rospy.logwarn_throttle(1,"No 2D keypoints input")
             return False
         
         bbox_center  = self.points_2d[0]
@@ -234,7 +236,7 @@ class Keypoints3dVisualizer:
             return False
 
         if self.depth_roi is None:
-            rospy.logwarn(1,"No cropped depth roi")
+            rospy.logwarn_throttle(1,"No cropped depth roi")
             return False
         
         self.pointcloud_roi = self.convert_depth_frame_to_pointcloud() 
@@ -276,7 +278,7 @@ class Keypoints3dVisualizer:
         self._process_depth_img()
         
         if not self.compute_bbox_on_depth():
-            rospy.logwarn(1, "Can not compute bbox on depth img")
+            rospy.logwarn_throttle(1, "Can not compute bbox on depth img")
 
         if not self.get_pointcloud_roi():
             rospy.logwarn_throttle(1, "Can not get point cloud")
