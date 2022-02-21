@@ -25,7 +25,7 @@
     <param name="left_camera_frame"   value="$(arg camera_frame)" />
     <param name="calibration_topic"   value="$(arg calibration_topic)"/>
     <param name="load_model"          value="$(arg model)"/>
-    <param name="calibration"         value="$(arg calibration_file)" />
+    <param name="calibration_file"    value="$(arg calibration_file)" />
     <param name="keypoints"           value="$(arg keypoints_file)" />
     <param name="image_file"          value="$(arg image_file)"/>
     <param name="pnp"                 value="false" type="bool" />

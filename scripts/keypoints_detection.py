@@ -57,7 +57,7 @@ class ObjectKeypointPipeline:
         self.use_gpu = rospy.get_param("~gpu", True)
         self.model = rospy.get_param('~load_model', "/home/ken/Hack/catkin_ws/src/object_keypoints/model/modelv2.pt")
         self.keypoint_config_path = rospy.get_param('~keypoints', "")
-        self.calibration_file = rospy.get_param('~calibration')
+        self.calibration_file = rospy.get_param('~calibration_file', "")
         self.verbose = rospy.get_param('~verbose', False)
     
         self.camera_info_topic = rospy.get_param("~calibration_topic", "/camera_info")
