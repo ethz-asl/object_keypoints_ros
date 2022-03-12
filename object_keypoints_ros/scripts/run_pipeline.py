@@ -6,9 +6,12 @@ import enum
 import imp
 from pickle import NONE
 import sys
+from matplotlib.pyplot import axis
 
 from numpy.core.fromnumeric import size
 import json
+
+from sklearn.feature_extraction import img_to_graph
 import rospy
 import torch
 import numpy as np
@@ -24,15 +27,17 @@ from matplotlib import cm
 from vision_msgs.msg import BoundingBox3D
 import utils
 from keypoint_msgs.msg import KeypointsArray, keypoint, ObjectsArray
-    
+from visualization_msgs.msg import Marker, MarkerArray
+import json
+import albumentations as A
 
 class ObjectKeypointPipeline:
     def __init__(self):
-        image_topic = rospy.get_param("object_keypoints_ros/image_topic", "/zedm/zed_node/left_raw/image_raw_color")
-        self.camera_frame = rospy.get_param('object_keypoints_ros/camera_frame')
+        image_topic = rospy.get_param("object_keypoints_ros/image_topic", "/camera/color/image_raw")
+        self.camera_frame = rospy.get_param('object_keypoints_ros/camera_frame', "camera_color_optical_frame")
         self.img_sub = rospy.Subscriber(image_topic, Image, callback=self._mono_image_callback, queue_size=1)
-        self.left_image = None
-        self.left_image_ts = None
+        self.mono_image = None
+        self.mono_image_ts = None
         self.bridge = CvBridge()
         self.use_gpu = rospy.get_param("object_keypoints_ros/gpu", True)
         self.info_period = 1.0
@@ -40,6 +45,7 @@ class ObjectKeypointPipeline:
         # params
         self.input_size = (511, 511)  # TODO: hard-coded
         self.IMAGE_SIZE = (1280, 720)
+        self.sq_IMAGE_SIZE = (720,720)
         self.prediction_size = SceneDataset.prediction_size # 64 x 64
         self.image_offset = SceneDataset.image_offset
         
@@ -58,7 +64,8 @@ class ObjectKeypointPipeline:
         
         # calibration
         self._read_calibration()
-        self.scaling_factor = np.array(self.IMAGE_SIZE) / np.array(self.prediction_size)
+        self.pipeline.detection_to_point.reset(self.camera)
+        self.scaling_factor = np.array(self.sq_IMAGE_SIZE) / np.array(self.prediction_size)
         rospy.logdebug("scalling facotr is : ")
         rospy.logdebug(self.scaling_factor)
         
@@ -81,10 +88,26 @@ class ObjectKeypointPipeline:
             self.bbox_pub = None
 
         # to vis kp in overlay image
-        self.green = np.zeros((20,20,3))
-        self.green[:,:,1] = 100
-    
-            
+        self.green = np.zeros((8,8,3))
+        self.green[:,:,1] = 254
+        
+        # debug: pub kp in 3D 
+        self.kp_marker_array = MarkerArray()
+        self.kp_marker_array_publisher = rospy.Publisher("kp_debug/kp_markers", MarkerArray, queue_size=10)
+        
+        self.kp_gt_marker_array = MarkerArray()
+        self.kp_gt_marker_array_publisher = rospy.Publisher("kp_debug/kp_gt_markers", MarkerArray, queue_size=10)
+        
+        # Image processer, to make the input as the format to the model
+        frame_resizer = [A.SmallestMaxSize(max_size=max(self.input_size[0], self.input_size[1])),
+                A.CenterCrop(height=self.input_size[0], width=self.input_size[1])]
+        self.frame_resizer = A.Compose(frame_resizer)  # first rescale and then crop, to keep the ratio
+        
+        # Opening JSON file to check GT
+        f = open(rospy.get_param('object_keypoints_ros/ref_gt'))
+        self.gt_data = json.load(f)
+        self.gt_pt = self.gt_data['3d_points']
+        
     def _read_calibration(self):
         path = rospy.get_param('object_keypoints_ros/calibration')
         params = camera_utils.load_calibration_params(path)
@@ -98,9 +121,9 @@ class ObjectKeypointPipeline:
         # Cooperate with monocular version
         camera = camera_utils.FisheyeCamera(params['K'], params['D'], params['image_size'])
         camera = camera.scale(SceneDataset.height_resized / SceneDataset.height)
-        self.camera = camera.cut(self.image_offset)
-
-        scale_small = self.prediction_size[0] / SceneDataset.height_resized
+        self.camera = camera.cut(self.image_offset)  # cam model for resolution 511 * 511
+        
+        scale_small = self.prediction_size[0] / SceneDataset.height_resized  # cam model for resolution 64 * 64
         self.camera_small = camera.cut(self.image_offset).scale(scale_small)
 
 
@@ -121,36 +144,40 @@ class ObjectKeypointPipeline:
 
     def _mono_image_callback(self, image):
         img = self.bridge.imgmsg_to_cv2(image, 'rgb8')
-        self.left_image = img
-        self.left_image_ts = image.header.stamp
+        self.mono_image = img
+        self.mono_image_ts = image.header.stamp
 
 
     def _preprocess_image(self, image):
+        image = self.frame_resizer(image=image)['image'].astype(np.float32)
         image = image.transpose([2, 0, 1])
         image = torch.tensor(image / 255.0, dtype=torch.float32)
         image -= self.rgb_mean
         image /= self.rgb_std
         image = image[None]
-        return torch.nn.functional.interpolate(image, size=self.input_size, mode='bilinear', align_corners=False).detach()
+        return image.clone().detach()
     
     def _to_msg(self, objs):
         
         self.ObjectArray = ObjectsArray()
-        self.ObjectArray.header.stamp = self.left_image_ts
+        self.ObjectArray.header.stamp = self.mono_image_ts
         self.ObjectArray.header.frame_id = self.camera_frame
-        self.ObjectArray.ObjectSize = len(objs)
+        self.ObjectArray.ObjectSize = len(objs)  # TODO: for single object now
         self.ObjectArray.PointSize = 0 
         
         for i, obj in enumerate(objs):
             
             self.keypointArray = KeypointsArray()
-            self.keypointArray.header.stamp = self.left_image_ts
+            self.keypointArray.header.stamp = self.mono_image_ts
             self.keypointArray.header.frame_id = self.camera_frame
-            self.keypointArray.PointSize = len(obj['p_C'])
-            self.ObjectArray.PointSize += len(obj['p_C'])
+            self.keypointArray.PointSize = obj['world_xyz'].shape[0]
+            self.ObjectArray.PointSize += self.keypointArray.PointSize
             
-            for j, (p_world, p_center) in enumerate(zip(obj['p_C'],obj['keypoints'])):
-              
+            # for j, (p_world, p_center) in enumerate(zip(obj['p_C'],obj['keypoints'])):
+            for j in range(self.keypointArray.PointSize):
+                
+                p_world = obj['world_xyz'][j]
+                p_center =  obj['coord_xyz'][0].numpy()[j]
                 keypoint_msg = keypoint()
                 keypoint_msg.object_idx = i
                 keypoint_msg.semantic_idx = j
@@ -162,19 +189,19 @@ class ObjectKeypointPipeline:
                 
                 # insert 3D keypoint in world
                 keypoint_msg.valid = True 
-                keypoint_msg.point3d.x =  p_world[0][0]
-                keypoint_msg.point3d.y =  p_world[0][1]
-                keypoint_msg.point3d.z =  p_world[0][2]
+                keypoint_msg.point3d.x =  p_world[0]
+                keypoint_msg.point3d.y =  p_world[1]
+                keypoint_msg.point3d.z =  p_world[2]
 
                 # insert 2D keypoint in result img
-                p_img = self._heatmapIdx_to_imageIdx(p_center)
+                p_img = self._heatmapIdx_to_imageIdx(p_center[:2])
                 keypoint_msg.point2d.x = p_img[0]
                 keypoint_msg.point2d.y = p_img[1]
                 
                 self.keypointArray.keypoints.append(keypoint_msg)
                 
                 # pin the point on self.image_overlay
-                self.image_overlay[p_img[0]-10:p_img[0]+10, p_img[1]-10:p_img[1]+10,:] += self.green.astype(np.uint8)
+                self.image_overlay[p_img[0]-4:p_img[0]+4, p_img[1]-4:p_img[1]+4,:] = self.green
             
                 rospy.logdebug_throttle(self.info_period,"original 2D kp from model: ")
                 rospy.logdebug_throttle(self.info_period,p_center)  # indx in 64,64 image
@@ -205,20 +232,24 @@ class ObjectKeypointPipeline:
 
     def _publish_result_img(self):
         image_msg = self.bridge.cv2_to_imgmsg(self.image_overlay[:, :, :3], encoding='passthrough')
-        image_msg.header.stamp = self.left_image_ts
+        image_msg.header.stamp = self.mono_image_ts
+        image_msg.height = 720
+        image_msg.width = 720
         self.result_img_pub.publish(image_msg)
         
 
     def _to_heatmap(self, target):
-        target = np.clip(target, 0.0, 1.0)
+         # target = np.clip(target, 0.0, 1.0)  # NO need, sigmoid is done in package model 
         target = target.sum(axis=0)
         target = (cm.inferno(target) * 255.0).astype(np.uint8)[:, :, :3]
-        return cv2.resize(target[:, :, :3], self.IMAGE_SIZE)
-
+        # return cv2.resize(target[:, :, :3], self.IMAGE_SIZE)
+        return cv2.resize(target[:,:,:3], self.sq_IMAGE_SIZE)
+    
     def _to_image(self, frame):
         frame = SceneDataset.to_image(frame)
-        return cv2.resize(frame, self.IMAGE_SIZE)
-    
+        # return cv2.resize(frame, self.IMAGE_SIZE)
+        return cv2.resize(frame, self.sq_IMAGE_SIZE)
+        
     def kp_map_to_image(self, kp):  # TODO: check if this still needed
         kp_ = []
         for i, pt in enumerate(kp):
@@ -231,7 +262,7 @@ class ObjectKeypointPipeline:
         return kp_
     
     def _heatmapIdx_to_imageIdx(self, pt):
-        pt = np.squeeze(pt)     
+        pt = np.squeeze(pt)  
         pt = np.multiply( pt, self.scaling_factor).astype(np.int64)
         pt_ = np.flip(pt)  # TODO: notice kp idx is flipped from image idx in 2D, this is acturally indx in [height, width] frame
         return pt_
@@ -239,29 +270,88 @@ class ObjectKeypointPipeline:
     def step(self):
         
         # process rgb image
-        if self.left_image is not None:
-            left_image = self._preprocess_image(self.left_image)
-            objects, heatmap = self.pipeline(left_image)
-            self.left_image = None
- 
-            heatmap_left = self._to_heatmap(heatmap[0].numpy())
-            left_image = left_image.cpu().numpy()[0]
-
-            #rospy.loginfo(np.shape(left_image))        # [3, 511, 511]
+        if self.mono_image is not None:
+            mono_image = self._preprocess_image(self.mono_image)
             
-            left_rgb = self._to_image(left_image)
-            self.image_overlay = (0.3 * left_rgb + 0.7 * heatmap_left).astype(np.uint8)
+            objects = []
+            object = self.pipeline(mono_image)
+            objects.append(object)  # TODO: now is the single object pipeline len(objects = 1)
+            
+            self.mono_image = None
+ 
+            heatmap = self._to_heatmap(object['heatmap'].numpy())
+            mono_image = mono_image.cpu().numpy()[0]
+
+            #rospy.loginfo(np.shape(mono_image))        # [3, 511, 511]
+            
+            mono_rgb = self._to_image(mono_image)
+            self.image_overlay = (0.3 * mono_rgb + 0.7 * heatmap).astype(np.uint8)
             
             # extract obj 3D and 2D idx in result img, and convert to ros msg
-            self._to_msg(objects)
-
+            self._to_msg(objects)  
+            
             # publish
             self.kp_msg_pub.publish(self.ObjectArray)
                         
             # pub result image, i.e. self.image_overlay
             self._publish_result_img()
+        
+            # kp_marker_array = MarkerArray()   
+            # for i in range(object['world_xyz'].shape[0]):
+            #     x = object['world_xyz'][i,0]
+            #     y = object['world_xyz'][i,1]
+            #     z = object['world_xyz'][i,2]
+ 
+            #     self.kp_marker = Marker()
+            #     self.kp_marker.header.frame_id = "camera_color_optical_frame"
+            #     self.kp_marker.type = Marker.SPHERE
+            #     self.kp_marker.action = Marker.ADD
+            #     self.kp_marker.scale.x = 0.01
+            #     self.kp_marker.scale.y = 0.01
+            #     self.kp_marker.scale.z = 0.01
+            #     self.kp_marker.color.a = 1.0   # TODO: for multi-object, set different color based on color idx from msg
+            #     self.kp_marker.color.r = 1.0
+            #     self.kp_marker.color.g = 0.0
+            #     self.kp_marker.color.b = 0.0
+            #     self.kp_marker.pose.position.x = x
+            #     self.kp_marker.pose.position.y = y
+            #     self.kp_marker.pose.position.z = z
+            #     self.kp_marker.pose.orientation.w = 1.0 
+            #     self.kp_marker.id = i
+            #     kp_marker_array.markers.append(self.kp_marker)
                         
-                     
+            # self.kp_marker_array = kp_marker_array
+            # self.kp_marker_array_publisher.publish(self.kp_marker_array)
+            
+            
+            kp_gt_marker_array = MarkerArray()   
+            for i in range(len(self.gt_pt)):
+                x = self.gt_pt[i][0]
+                y = self.gt_pt[i][1]
+                z = self.gt_pt[i][2]
+ 
+                self.kp_marker = Marker()
+                self.kp_marker.header.frame_id = "world"
+                self.kp_marker.type = Marker.SPHERE
+                self.kp_marker.action = Marker.ADD
+                self.kp_marker.scale.x = 0.01
+                self.kp_marker.scale.y = 0.01
+                self.kp_marker.scale.z = 0.01
+                self.kp_marker.color.a = 1.0 
+                self.kp_marker.color.r = 0.0
+                self.kp_marker.color.g = 1.0
+                self.kp_marker.color.b = 0.0
+                self.kp_marker.pose.position.x = x
+                self.kp_marker.pose.position.y = y
+                self.kp_marker.pose.position.z = z
+                self.kp_marker.pose.orientation.w = 1.0 
+                self.kp_marker.id = i
+                kp_gt_marker_array.markers.append(self.kp_marker)
+                        
+            self.kp_gt_marker_array = kp_gt_marker_array
+            self.kp_gt_marker_array_publisher.publish(self.kp_gt_marker_array)
+            
+            
 if __name__ == "__main__":
     log_debug = rospy.get_param('object_keypoints_ros/log_debug', False)
     with torch.no_grad():

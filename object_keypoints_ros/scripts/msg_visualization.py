@@ -46,6 +46,7 @@ class Keypoints3dVisualizer:
       # local node vars
         self.points_2d = []
         self.depth_img = None
+        self.imgtodepth_offset = [0, ((1280 - 720.0) / 2.0)]  # the input 2D is the coord in [720 720] img
         self.depth_img_overlay = None
         self.depth_roi = None
         self.top_left_idx = None
@@ -83,7 +84,9 @@ class Keypoints3dVisualizer:
                 self.kp_marker.id = i
                 kp_marker_array.markers.append(self.kp_marker)
                         
-                # kp idx in 2d img  
+                # kp idx in 2d img
+                pt.point2d.x = pt.point2d.x  + self.imgtodepth_offset[0]
+                pt.point2d.y = pt.point2d.y  + self.imgtodepth_offset[1]
                 point_2d.append(pt.point2d)
             
         self.kp_marker_array = kp_marker_array
@@ -202,7 +205,8 @@ class Keypoints3dVisualizer:
             rospy.logwarn_throttle(1,"No 2D keypoints input")
             return False
         
-        bbox_center  = self.points_2d[0]
+        bbox_center = self.points_2d[0]
+        
         width = 140
         height = 150
         lw = 3
@@ -239,10 +243,13 @@ class Keypoints3dVisualizer:
             rospy.logwarn_throttle(1,"No cropped depth roi")
             return False
         
+        # extract from 2D bbox on depth img
         self.pointcloud_roi = self.convert_depth_frame_to_pointcloud() 
-    
+
         return True
-    
+
+        
+        
     def np_to_point_cloud(self):
         """ Creates a point cloud message.
         Args:

@@ -8,11 +8,12 @@
   <node name="object_keypoints_ros" pkg="object_keypoints_ros" type="run_pipeline.py" output="screen">
     <param name="image_topic" value="/camera/color/image_raw" />
     <param name="camera_frame" value="camera_color_optical_frame" />
-    <param name="load_model" value="/home/user/perception/model/model_v3_19.pt" />
+    <param name="load_model" value="/home/user/perception/model/model_v28.pt" />
     <param name="calibration" value="$(find object_keypoints_ros)/config/calibration.yaml" />
     <param name="keypoints" value="$(find object_keypoints_ros)/config/cups.json" />
     <param name="gpu" value="true" type="bool" />
     <param name="log_debug" value="$(arg log_debug)" type ="bool" />
+    <param name="ref_gt" value="/home/user/perception/dataset/encoded/train_large/encode_clutter_env/2000/keypoints.json"/>
   </node>
 
   <!-- add kp markers topic "kp_3d_marker" for rviz -->>
