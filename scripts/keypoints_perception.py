@@ -24,7 +24,7 @@ class PerceptionModule:
         self.depth_window_size = rospy.get_param("~depth_window_size", 5)
         self.max_distance_threshold = rospy.get_param("~max_distance_threshold", 5)
         self.calibration_topic = rospy.get_param("~calibration_topic", "/camera_info")
-        self.calibration: CameraInfo = None
+        self.camera_info: CameraInfo = None
 
         # Images
         self.depth = None
@@ -41,7 +41,7 @@ class PerceptionModule:
         self.depth_sub = rospy.Subscriber(self.depth_topic, Image, self._depth_callback, queue_size=1)
         self.marker_pub = rospy.Publisher("object_keypoints_ros/perception", MarkerArray, queue_size=1)
         self.detection_srv_client = rospy.ServiceProxy("object_keypoints_ros/detect", KeypointsDetection)
-        self.trigger_detection_srv = rospy.Service("object_keypoints_ros/perceive", KeypointsPerception, self._perception_callback)
+        self.trigger_detection_srv = rospy.Service("object_keypoints_ros/perceive", KeypointsPerception, self.perceive)
 
     def _make_marker(self, id, frame_id, x, y, z):
         marker = Marker()
@@ -63,7 +63,7 @@ class PerceptionModule:
         return marker
 
     def _calibration_callback(self, msg: CameraInfo):
-        self.calibration = msg
+        self.camera_info = msg
 
     def _depth_callback(self, msg):
         multiplier = 1.0
@@ -78,12 +78,7 @@ class PerceptionModule:
     def _image_callback(self, msg: Image):
         self.rgb = msg
 
-    def _perception_callback(self, req: KeypointsPerceptionRequest):
-        res = KeypointsPerceptionResponse()
-        res.keypoints = self.perceive()
-        return res
-
-    def perceive(self):
+    def perceive(self, req: KeypointsPerceptionRequest):
         """
         Uses a keypoint detection service and depth information to perceive 3D points
         :return: 3D keypoint poses
@@ -91,8 +86,8 @@ class PerceptionModule:
         self.detection_srv_client.wait_for_service(timeout=10)
         rospy.logwarn("Service {} not available yet".format(self.detection_srv_client.resolved_name))
 
-        if self.calibration is None:
-            rospy.logwarn("No calibration received yet, skipping detection")
+        if self.camera_info is None:
+            rospy.logwarn("No camera info received yet, skipping detection")
             return
         if self.depth is None:
             rospy.logwarn("No depth image received yet, skipping detection")
@@ -104,7 +99,7 @@ class PerceptionModule:
         req = KeypointsDetectionRequest()
         req_depth = copy.deepcopy(self.depth) # store locally the current depth image as well
         req.rgb = self.rgb
-        res: KeypointsDetectionResponse = self.detection_srv_client.call(req)
+        res_det: KeypointsDetectionResponse = self.detection_srv_client.call(req)
 
         # The check for the correct number of keypoints is already implemented in the keypoint detection service
 
@@ -118,7 +113,7 @@ class PerceptionModule:
         q = np.array([trans.transform.rotation.x, trans.transform.rotation.y, trans.transform.rotation.z, trans.transform.rotation.w])
         R_w_cam = Rotation.from_quat(q).as_matrix()
 
-        for i, kpt in enumerate(res.detection.keypoints):
+        for i, kpt in enumerate(res_det.detection.keypoints):
             print("Processing keypoint {} {}".format(kpt.x, kpt.y))
 
             # take a window of depths and extract the median to remove outliers
@@ -137,8 +132,8 @@ class PerceptionModule:
 
             # retrieve the global x, y coordinate of the point given z
             # TODO not accounting for distortion --> would be better to just operate on undistorted images
-            P_cam[0] = (kpt.x - self.calibration.K[2]) * P_cam[2] / self.calibration.K[0]
-            P_cam[1] = (kpt.y - self.calibration.K[5]) * P_cam[2] / self.calibration.K[4]
+            P_cam[0] = (kpt.x - self.camera_info.K[2]) * P_cam[2] / self.camera_info.K[0]
+            P_cam[1] = (kpt.y - self.camera_info.K[5]) * P_cam[2] / self.camera_info.K[4]
             rospy.loginfo("Kpt {} in camera frame: {}".format(i, P_cam))
 
             P_base = R_w_cam @ P_cam + t_w_cam
@@ -147,8 +142,16 @@ class PerceptionModule:
             pose_array.poses.append(marker.pose)
             print("Keypoint perceived at {}".format(P_cam))
 
+        res = KeypointsPerceptionResponse()
+        res.camera_pose.position = trans.transform.translation
+        res.camera_pose.orientation = trans.transform.rotation 
+        res.keypoints2d = res_det.detection.keypoints
+        res.header.stamp = rospy.get_rostime()
+        res.header.frame_id = self.camera_frame
+        res.camera_info = self.camera_info
+        res.keypoints = pose_array
         self.marker_pub.publish(marker_array)
-        return pose_array
+        return res
 
 
 if __name__ == "__main__":

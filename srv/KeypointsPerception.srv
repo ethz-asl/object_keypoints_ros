@@ -1,2 +1,6 @@
 ---
+std_msgs/Header header
+geometry_msgs/Pose camera_pose
+sensor_msgs/CameraInfo camera_info  
 geometry_msgs/PoseArray keypoints
+object_keypoints_ros/Keypoint[] keypoints2d

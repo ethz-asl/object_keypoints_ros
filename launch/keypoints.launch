@@ -11,7 +11,7 @@
   <arg name="base_frame"        default="world"/>
   <arg name="camera_frame"      default="$(arg camera)_color_optical_frame"/>
   <arg name="model_name"        default="valve"/>
-  <arg name="model"             default="$(find object_keypoints_ros)/models/$(arg model_name)_depth.pt"/>
+  <arg name="model"             default="$(find object_keypoints_ros)/models/$(arg model_name).pt"/>
   <arg name="keypoints_file"    default="$(find object_keypoints_ros)/config/$(arg model_name).json"/>
   <arg name="image_file"        default="$(find object_keypoints_ros)/resources/$(arg model_name)3_gt.png"/>
   <arg name="rviz"              default="true"/>
