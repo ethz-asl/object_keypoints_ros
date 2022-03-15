@@ -8,7 +8,7 @@
   <node name="object_keypoints_ros" pkg="object_keypoints_ros" type="run_pipeline.py" output="screen">
     <param name="image_topic" value="/camera/color/image_raw" />
     <param name="camera_frame" value="camera_color_optical_frame" />
-    <param name="load_model" value="/home/user/perception/model/model_v28.pt" />
+    <param name="load_model" value="/home/user/perception/model/model_v29.pt" />
     <param name="calibration" value="$(find object_keypoints_ros)/config/calibration.yaml" />
     <param name="keypoints" value="$(find object_keypoints_ros)/config/cups.json" />
     <param name="gpu" value="true" type="bool" />
@@ -20,7 +20,10 @@
   <node name="kp_msg_vis_node" pkg="object_keypoints_ros" type="msg_visualization.py" output="screen"/>
 
   <group if="$(arg load_cam)">
-    <include file="$(find realsense2_camera)/launch/rs_camera.launch" />
+    <include file="$(find realsense2_camera)/launch/rs_camera.launch" >
+      <arg name="enable_pointcloud"  value="true"/> 
+      <arg name="align_depth" value="true"/>
+    </include>
   </group>
   
   <node pkg="rosbag" type="play" name="rosbag_play_recoreded" args=" -r 0.1 /home/boyang/data/cups/000.bag" if="$(arg load_bag)" >
