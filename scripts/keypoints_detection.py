@@ -17,6 +17,7 @@ from perception import pipeline
 from perception.utils import camera_utils
 from perception.datasets.video import SceneDataset
 
+from std_msgs.msg import Header
 from sensor_msgs.msg import Image, CameraInfo
 from object_keypoints_ros.msg import Keypoint, Keypoints
 from object_keypoints_ros.srv import KeypointsDetection, KeypointsDetectionResponse, KeypointsDetectionRequest
@@ -62,13 +63,9 @@ class ObjectKeypointPipeline:
     
         self.camera_info_topic = rospy.get_param("~calibration_topic", "/camera_info")
         self.left_image_topic = rospy.get_param("~left_image_topic", "/zedm/zed_node/left_raw/image_raw_color")
-        self.right_image_topic = rospy.get_param("~right_image_topic", "/zedm/zed_node/right_raw/image_raw_color")
-        self.left_camera_frame = rospy.get_param('~left_camera_frame')
         self.camera_info = None
         self.left_image = None
-        self.left_image_ts = None
-        self.right_image = None
-        self.right_image_ts = None
+        self.left_image_header = None
         self.bridge = CvBridge()
         self.scale = np.array([1, 1])
         self.global_scale = np.array([1, 1])
@@ -149,7 +146,7 @@ class ObjectKeypointPipeline:
             if len(objects) == 0:
                 rospy.logerr("No objects detected")
                 self.kpts_msg = Keypoints()
-                self.kpts_msg.header.stamp = self.left_image_ts
+                self.kpts_msg.header.stamp = self.left_image_header.stamp
                 return
             
             if self.verbose:
@@ -162,7 +159,7 @@ class ObjectKeypointPipeline:
             self._publish_result(img_in, left_heatmap, objects)
             self._publish_annotation(inference_img, objects)
             self._publish_heatmap_raw(raw_heatmap, objects)
-            self._publish_keypoints(objects, self.left_image_ts)
+            self._publish_keypoints(objects, self.left_image_header.stamp)
 
     ### Utilities and conversions
     def _preprocess_image(self, image):
@@ -263,6 +260,7 @@ class ObjectKeypointPipeline:
         result_img = self._compute_result_image(left_image, left_heatmap)  
         result_img = self._draw_keypoints(result_img, objects, scale=self.in_out_scale, size=30, thickness=5)
         result_msg = self.bridge.cv2_to_imgmsg(result_img[:, :, :3], encoding='passthrough')
+        result_msg.header = self.camera_info.header
         self.result_img_pub.publish(result_msg)
 
     def _publish_annotation(self, img, objects):
@@ -270,7 +268,7 @@ class ObjectKeypointPipeline:
         img_msg = self.bridge.cv2_to_imgmsg(img[:, :, :3], encoding='passthrough')
         self.annotation_img_pub.publish(img_msg)
 
-#### Class sepcializations
+#### Class specializations
 
 class ObjectKeypointsContinuous(ObjectKeypointPipeline):
     """
@@ -279,19 +277,13 @@ class ObjectKeypointsContinuous(ObjectKeypointPipeline):
     def __init__(self):
         ObjectKeypointPipeline.__init__(self)
         self.left_sub = rospy.Subscriber(self.left_image_topic, Image, callback=self._left_image_callback, queue_size=1)
-        self.right_sub = rospy.Subscriber(self.right_image_topic, Image, callback=self._right_image_callback, queue_size=1)
-    
-    ### Images callbacks
-    def _right_image_callback(self, image):
-        img = self.bridge.imgmsg_to_cv2(image, 'rgb8')
-        self.right_image = img
-        self.right_image_ts = image.header.stamp
 
+    ### Images callbacks
     def _left_image_callback(self, image):
         # this runs async with the step --> bad timing
         img = self.bridge.imgmsg_to_cv2(image, 'rgb8')
         self.left_image = img
-        self.left_image_ts = image.header.stamp
+        self.left_image_header = image.header
         with torch.no_grad():
             self.step()
 
@@ -321,7 +313,9 @@ class ObjectKeypointsStatic(ObjectKeypointPipeline):
         Debug method to parse a static image instead of subscribing to a ROS image stream 
         """
         self.left_image = cv2.imread(self.image_file)
-        self.left_image_ts = rospy.get_rostime()
+        header = Header()
+        header.stamp = rospy.get_rostime()
+        self.left_image_header = header
         self.static_image_ros = self.bridge.cv2_to_imgmsg(self.left_image, "rgb8")
 
     def run(self):
@@ -349,7 +343,7 @@ class ObjectKeypointsService(ObjectKeypointPipeline):
         self.info.print()
 
         self.left_image = self.bridge.imgmsg_to_cv2(req.rgb, 'rgb8')
-        self.left_image_ts = req.rgb.header.stamp
+        self.left_image_header = req.rgb.header
         with torch.no_grad():
             self.step()
 
