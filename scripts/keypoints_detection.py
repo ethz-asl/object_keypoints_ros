@@ -259,7 +259,7 @@ class ObjectKeypointPipeline:
     def _publish_result(self,left_image, left_heatmap, objects):
         result_img = self._compute_result_image(left_image, left_heatmap)  
         result_img = self._draw_keypoints(result_img, objects, scale=self.in_out_scale, size=30, thickness=5)
-        result_msg = self.bridge.cv2_to_imgmsg(result_img[:, :, :3], encoding='passthrough')
+        result_msg = self.bridge.cv2_to_imgmsg(result_img[:, :, :3], encoding='rgb8')
         result_msg.header = self.camera_info.header
         self.result_img_pub.publish(result_msg)
 
