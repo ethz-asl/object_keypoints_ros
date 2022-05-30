@@ -39,9 +39,9 @@ class PerceptionModule:
         self.calibration_sub = rospy.Subscriber(self.calibration_topic, CameraInfo, self._calibration_callback, queue_size=1)
         self.image_sub = rospy.Subscriber(self.image_topic, Image, self._image_callback, queue_size=1)
         self.depth_sub = rospy.Subscriber(self.depth_topic, Image, self._depth_callback, queue_size=1)
-        self.marker_pub = rospy.Publisher("object_keypoints_ros/perception", MarkerArray, queue_size=1)
-        self.detection_srv_client = rospy.ServiceProxy("object_keypoints_ros/detect", KeypointsDetection)
-        self.trigger_detection_srv = rospy.Service("object_keypoints_ros/perceive", KeypointsPerception, self.perceive)
+        self.marker_pub = rospy.Publisher("perception", MarkerArray, queue_size=1)
+        self.detection_srv_client = rospy.ServiceProxy("detect", KeypointsDetection)
+        self.trigger_detection_srv = rospy.Service("perceive", KeypointsPerception, self.perceive)
 
     def _make_marker(self, id, frame_id, x, y, z):
         marker = Marker()

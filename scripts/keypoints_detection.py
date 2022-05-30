@@ -105,13 +105,13 @@ class ObjectKeypointPipeline:
         self.proj_matrices = []
         
         # Publishers
-        self.left_heatmap_pub = rospy.Publisher("object_keypoints_ros/heatmap_left", Image, queue_size=1)
-        self.right_heatmap_pub = rospy.Publisher("object_keypoints_ros/heatmap_right", Image, queue_size=1)
-        self.result_img_pub = rospy.Publisher("object_keypoints_ros/result_img", Image, queue_size=1)
+        self.left_heatmap_pub = rospy.Publisher("heatmap_left", Image, queue_size=1)
+        self.right_heatmap_pub = rospy.Publisher("heatmap_right", Image, queue_size=1)
+        self.result_img_pub = rospy.Publisher("result_img", Image, queue_size=1)
         self.image_static_pub = rospy.Publisher(self.left_image_topic, Image, queue_size=1)
-        self.heatmap_raw_pub = rospy.Publisher("object_keypoints_ros/heatmap_raw", Image, queue_size=1)
-        self.annotation_img_pub = rospy.Publisher("object_keypoints_ros/annotation", Image, queue_size=1)
-        self.keypoints_pub =  rospy.Publisher("object_keypoints_ros/keypoints", Keypoints, queue_size=1)
+        self.heatmap_raw_pub = rospy.Publisher("heatmap_raw", Image, queue_size=1)
+        self.annotation_img_pub = rospy.Publisher("annotation", Image, queue_size=1)
+        self.keypoints_pub =  rospy.Publisher("keypoints", Keypoints, queue_size=1)
 
         # Camera models
         if os.path.isfile(self.calibration_file):
@@ -335,7 +335,7 @@ class ObjectKeypointsService(ObjectKeypointPipeline):
     """
     def __init__(self):
         ObjectKeypointPipeline.__init__(self)
-        self.detection_srv = rospy.Service("/object_keypoints_ros/detect", KeypointsDetection, self._detection_callback)
+        self.detection_srv = rospy.Service("detect", KeypointsDetection, self._detection_callback)
 
     def _detection_callback(self, req: KeypointsDetectionRequest):
         self.info.append("Processing detection request...")
