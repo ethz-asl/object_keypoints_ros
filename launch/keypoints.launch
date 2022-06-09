@@ -10,6 +10,8 @@
   <arg name="calibration_topic" default="/camera_info"/>
   <arg name="base_frame"        default="world"/>
   <arg name="camera_frame"      default="$(arg camera)_color_optical_frame"/>
+  <arg name="depth_window_size" default="5"/>
+  <arg name="depth_window_mode" default="median"/>
   <arg name="model_name"        default="valve"/>
   <arg name="model"             default="$(find object_keypoints_ros)/models/$(arg model_name).pt"/>
   <arg name="keypoints_file"    default="$(find object_keypoints_ros)/config/$(arg model_name).json"/>
@@ -39,6 +41,8 @@
     <param name="camera_frame" value="$(arg camera_frame)"/>
     <param name="image_topic" value="$(arg image_topic)"/>
     <param name="depth_topic" value="$(arg depth_topic)"/>
+    <param name="depth_window_size" value="$(arg depth_window_size)"/>
+    <param name="depth_window_mode" value="$(arg depth_window_mode)"/>
     <param name="calibration_topic" value="$(arg calibration_topic)"/>
   </node>
 

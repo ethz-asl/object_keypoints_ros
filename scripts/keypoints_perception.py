@@ -22,6 +22,7 @@ class PerceptionModule:
         self.image_topic = rospy.get_param("~image_topic")
         self.depth_topic = rospy.get_param("~depth_topic")
         self.depth_window_size = rospy.get_param("~depth_window_size", 5)
+        self.depth_window_mode = rospy.get_param("~depth_window_mode", "median")
         self.max_distance_threshold = rospy.get_param("~max_distance_threshold", 5)
         self.calibration_topic = rospy.get_param("~calibration_topic", "/camera_info")
         self.camera_info: CameraInfo = None
@@ -128,19 +129,26 @@ class PerceptionModule:
             depth_wdw = depth_wdw[depth_wdw<self.max_distance_threshold]  # threshold far away values
 
             P_cam = np.zeros((3,))
-            P_cam[2] = np.median(depth_wdw)
+            if self.depth_window_mode == "median":
+                P_cam[2] = np.median(depth_wdw)
+            elif self.depth_window_mode == "min":
+                P_cam[2] = np.min(depth_wdw)
+            elif self.depth_window_mode == "max":
+                P_cam[2] = np.max(depth_wdw)
+            else:
+                raise Exception(f"Depth window mode {self.depth_window_mode} is not supported")
+            rospy.loginfo(f"Using depth window mode {self.depth_window_mode} with window size {self.depth_window_size}")
 
             # retrieve the global x, y coordinate of the point given z
             # TODO not accounting for distortion --> would be better to just operate on undistorted images
             P_cam[0] = (kpt.x - self.camera_info.K[2]) * P_cam[2] / self.camera_info.K[0]
             P_cam[1] = (kpt.y - self.camera_info.K[5]) * P_cam[2] / self.camera_info.K[4]
-            rospy.loginfo("Kpt {} in camera frame: {}".format(i, P_cam))
 
             P_base = R_w_cam @ P_cam + t_w_cam
             marker = self._make_marker(i, self.base_frame, P_base[0], P_base[1], P_base[2])
             marker_array.markers.append(marker)
             pose_array.poses.append(marker.pose)
-            print("Keypoint perceived at {}".format(P_cam))
+            print(f"Keypoint {i} perceived at P_cam={P_cam} and P_base={P_base}")
 
         res = KeypointsPerceptionResponse()
         res.camera_pose.position = trans.transform.translation
