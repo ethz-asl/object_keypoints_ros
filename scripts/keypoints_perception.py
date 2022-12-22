@@ -128,6 +128,9 @@ class PerceptionModule:
             depth_wdw = depth_wdw[depth_wdw>0]  # threshold invalid values
             depth_wdw = depth_wdw[depth_wdw<self.max_distance_threshold]  # threshold far away values
 
+            if len(depth_wdw) == 0:
+                raise Exception(f"No valid depth information could be extracted for keypoint ({kpt.x}, {kpt.y}), maybe it is too close to the edge of the image")
+
             P_cam = np.zeros((3,))
             if self.depth_window_mode == "median":
                 P_cam[2] = np.median(depth_wdw)
